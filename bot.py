@@ -1,6 +1,7 @@
 import os
 import logging
 import requests
+import yt_dlp
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
@@ -53,11 +54,39 @@ def get_precise_currency():
         return {"TRY": rates['TRY'], "IRR": rates['IRR'], "IQD": 150750}
     except: return None
 
-# --- ٢. فرمانێن سەرەکی ---
+# --- ٢. مێشکێ داونلۆدکەری (Media Downloader) ---
+
+def download_media(url, mode='video'):
+    if not os.path.exists('downloads'):
+        os.makedirs('downloads')
+
+    ydl_opts = {
+        'outtmpl': 'downloads/%(title)s.%(ext)s',
+        'noplaylist': True,
+        'quiet': True,
+    }
+
+    if mode == 'video':
+        ydl_opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+    else:  # MP3 Mode
+        ydl_opts['format'] = 'bestaudio/best'
+        ydl_opts['postprocessors'] = [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }]
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        filename = ydl.prepare_filename(info)
+        if mode == 'audio':
+            filename = os.path.splitext(filename)[0] + '.mp3'
+        return filename
+
+# --- ٣. فرمانێن سەرەکی ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user.first_name
-    await update.message.reply_text(f"سلاڤ {user} 👋\nبخێر هاتی بۆ ئالیکارێ بادینان. هەر تشتەکێ بنڤێسی ئەز دێ بۆ تە وەرگێڕم.")
+    await update.message.reply_text(f"سلاڤ {update.effective_user.first_name} 👋\nبخێر هاتی! هەر تشتەکێ بنڤێسی دێ وەرگێڕم، و هەر لینکەکێ بفرێخی دێ داونلۆد کەم.")
 
 async def prayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     p = get_precise_prayer()
@@ -76,45 +105,68 @@ async def currency(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else: msg = "کێشەک د توکنێ دراڤی دا هەبوو."
     await update.message.reply_text(msg, parse_mode='Markdown')
 
-async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    w = get_precise_weather()
-    await update.message.reply_text(f"🌤 **کەشوهەوا (دهۆک):**\n`{w}`", parse_mode='Markdown')
-
-async def translate_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔄 **وەرگێڕان:**\nپێدڤی ب چ فرمانان نینە، تەنێ هەر تشتەکێ تە دڤێت بنڤێسه و بفرێکه، ئەز دێ دەملدەست وەرگێڕم.")
-
-# --- ٣. مێشکێ وەرگێڕانێ ---
+# --- ٤. مێشکێ بوتێ (Handling Text & Links) ---
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if text.startswith('/'): return
     
-    waiting = await update.message.reply_text("⏳ دهێتە وەرگێڕان...")
-    try:
-        translated_ar = GoogleTranslator(source='ku', target='ar').translate(text)
-        translated_en = GoogleTranslator(source='ku', target='en').translate(text)
-        result = (f"✅ **ئەنجامێ وەرگێڕانێ:**\n\n🇸🇦 **عەرەبی:**\n`{translated_ar}`\n\n🇺🇸 **ئینگلیزی:**\n`{translated_en}`")
-        await waiting.edit_text(result, parse_mode='Markdown')
-    except:
-        await waiting.edit_text("ببوره، کێشەیەک د وەرگێڕانێ دا هەبوو.")
-
-# --- ٤. دوگمە و رێکخستنا مینیو ---
+    if "http" in text:
+        # لینک هاتە دیتن، پەیامەکێ و دوگمەیان فرێکه
+        context.user_data['download_url'] = text
+        keyboard = [
+            [InlineKeyboardButton("🎬 ڤیدیۆ (Video)", callback_data='dl_video')],
+            [InlineKeyboardButton("🎵 دەنگ (MP3)", callback_data='dl_audio')]
+        ]
+        await update.message.reply_text("🎥 لینک هاتە دیتن! تە چ دڤێت؟", reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        # وەرگێڕانا دەقی
+        waiting = await update.message.reply_text("⏳ دهێتە وەرگێڕان...")
+        try:
+            ar = GoogleTranslator(source='ku', target='ar').translate(text)
+            en = GoogleTranslator(source='ku', target='en').translate(text)
+            await waiting.edit_text(f"✅ **ئەنجام:**\n\n🇸🇦 عەرەبی: `{ar}`\n🇺🇸 ئینگلیزی: `{en}`", parse_mode='Markdown')
+        except:
+            await waiting.edit_text("ببوره، کێشەیەک هەبوو.")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    
+    url = context.user_data.get('download_url')
+    
     if query.data == 'm': await query.message.reply_text("☀️ زیکرێ سپێدێ: (أصبحنا وأصبح الملك لله)")
-    if query.data == 'e': await query.message.reply_text("🌙 زیکرێ ئێڤاری: (أمسینا وأمسی الملك لله)")
+    elif query.data == 'e': await query.message.reply_text("🌙 زیکرێ ئێڤاری: (أمسینا وأمسی الملك لله)")
+    
+    elif query.data in ['dl_video', 'dl_audio']:
+        if not url:
+            await query.message.reply_text("ببورە، لینک نەهاتە دیتن.")
+            return
+
+        status_msg = await query.message.reply_text("⏳ دهێتە داونلۆدکرن... کێمەکێ ل هیڤیێ بە.")
+        mode = 'video' if query.data == 'dl_video' else 'audio'
+        
+        try:
+            file_path = download_media(url, mode)
+            with open(file_path, 'rb') as f:
+                if mode == 'video':
+                    await query.message.reply_video(video=f, caption="✅ ڤیدیۆیا تە ئامادەیە.")
+                else:
+                    await query.message.reply_audio(audio=f, caption="✅ فایلێ دەنگی ئامادەیە.")
+            
+            os.remove(file_path) # پاککرنا فایلان ژ سێرڤەری
+            await status_msg.delete()
+        except Exception as e:
+            logging.error(f"DL Error: {e}")
+            await status_msg.edit_text("ببورە، داونلۆد نەبوو. رەنگە ڤیدیۆ زۆر درێژ بیت یان یا پاراستی بیت.")
 
 async def post_init(application: Application):
-    # ل ڤێرە فەرمانا translate زێدە بوو دا د مینیو دا دیار بیت
     await application.bot.set_my_commands([
         BotCommand("start", "دەسپێکرنا بوتی"),
         BotCommand("currency", "بهایێ دراڤی"),
         BotCommand("prayer", "دەمێن بانگی"),
         BotCommand("weather", "کەشوهەوا"),
-        BotCommand("adhkar", "زیکر و ئایین"),
-        BotCommand("translate", "وەرگێڕان")
+        BotCommand("adhkar", "زیکر و ئایین")
     ])
 
 def main():
@@ -124,8 +176,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("currency", currency))
     app.add_handler(CommandHandler("prayer", prayer))
-    app.add_handler(CommandHandler("weather", weather_cmd))
-    app.add_handler(CommandHandler("translate", translate_help))
+    app.add_handler(CommandHandler("weather", lambda u, c: u.message.reply_text(f"🌤 کەشوهەوا: {get_precise_weather()}")))
     app.add_handler(CommandHandler("adhkar", lambda u, c: u.message.reply_text("📖 زیکرەکێ هەلبژێره:", 
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("☀️ سپێدێ", callback_data='m'), InlineKeyboardButton("🌙 ئێڤاری", callback_data='e')]]))))
     
