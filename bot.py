@@ -51,30 +51,30 @@ async def adhkar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode='Markdown')
 
 async def translate_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔄 **خزمەتگۆزاریا وەرگێڕانێ:**\nتەنێ پەیڤ یان رستەکێ ب بادینی یان هەر زمانەکێ دی بۆ من فرێبکه، ئەز دێ دەملدەست بۆ تە وەرگێڕمە سەر عەرەبی و ئینگلیزی.")
+    await update.message.reply_text("🔄 **خزمەتگۆزاریا وەرگێڕانێ:**\nتەنێ پەیڤ یان رستەکێ ب بادینی بۆ من فرێبکه، ئەز دێ دەملدەست بۆ تە وەرگێڕمە سەر عەرەبی و ئینگلیزی.")
 
-# --- ٣. مێشکێ وەرگێڕانێ (Handling Translation) ---
+# --- ٣. مێشکێ وەرگێڕانێ (Handling Translation - Fixed) ---
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     
-    # نیشاندانا نامەیا (جارێ چەبکە...) دا بکارهێنەر چەبیت
+    # نیشاندانا نامەیا چاڤەڕێبوونێ
     waiting_msg = await update.message.reply_text("⏳ ل هیڤیێ بە، دهێتە وەرگێڕان...")
 
     try:
-        # وەرگێڕان بۆ عەرەبی و ئینگلیزی
-        # تێبینی: 'auto' دێ ب خۆ زمانێ دەقی ناسیت (بادینی بیت یان هەر تشتەک)
-        translated_ar = GoogleTranslator(source='auto', target='ar').translate(user_text)
-        translated_en = GoogleTranslator(source='auto', target='en').translate(user_text)
+        # ل ڤێرە مە source کرە 'ku' (Kurdish) دا کو گۆگڵ ب درستی ژ بادینی وەربگریت
+        translated_ar = GoogleTranslator(source='ku', target='ar').translate(user_text)
+        translated_en = GoogleTranslator(source='ku', target='en').translate(user_text)
 
         result = (
             f"✅ **ئەنجامێ وەرگێڕانێ:**\n\n"
-            f"🇸🇦 **عەرەبی:**\n`{translated_ar}`\n\n"
-            f"🇺🇸 **ئینگلیزی:**\n`{translated_en}`"
+            f"🇸🇦 **ب عەرەبی:**\n`{translated_ar}`\n\n"
+            f"🇺🇸 **ب ئینگلیزی:**\n`{translated_en}`"
         )
         await waiting_msg.edit_text(result, parse_mode='Markdown')
     
     except Exception as e:
+        logging.error(f"Translation Error: {e}")
         await waiting_msg.edit_text("ببورە، کێشەیەک د وەرگێڕانێ دا چێبوو. دووبارە تاقی بکەوه.")
 
 # --- دەستپێکرنا بوتی ---
@@ -86,7 +86,6 @@ def main():
 
     app = Application.builder().token(TOKEN).build()
 
-    # فرمانێن Slash
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("currency", currency))
     app.add_handler(CommandHandler("prayer", prayer))
@@ -95,7 +94,6 @@ def main():
     app.add_handler(CommandHandler("adhkar", adhkar))
     app.add_handler(CommandHandler("translate", translate_info))
 
-    # هەر نامەیەکا دەقی بیت و فرمان نەبیت، دێ وەرگێڕیت
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Bot is running...")
