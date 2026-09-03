@@ -1,6 +1,6 @@
 import os
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
 from deep_translator import GoogleTranslator
 
@@ -9,6 +9,19 @@ TOKEN = os.getenv('BOT_TOKEN')
 
 # رێکخستنا لۆگ
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+
+# --- پشکا رێکخستنا لیستا فرمانان (Menu Commands) ---
+async def post_init(application: Application):
+    commands = [
+        BotCommand("start", "دەسپێکرنا بوتی"),
+        BotCommand("currency", "بهایێ دراڤی (دۆلار، تمەن)"),
+        BotCommand("prayer", "دەمێن بانگی ل دهۆکێ"),
+        BotCommand("weather", "کەشوهەوا ل بادینان"),
+        BotCommand("education", "پشکا قوتابی و مەلازێمان"),
+        BotCommand("adhkar", "زیکر و بابەتێن ئایینی"),
+        BotCommand("translate", "رێنماییا وەرگێڕانێ")
+    ]
+    await application.bot.set_my_commands(commands)
 
 # --- ١. فرمانێن سەرەکی ---
 
@@ -51,18 +64,16 @@ async def adhkar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode='Markdown')
 
 async def translate_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔄 **خزمەتگۆزاریا وەرگێڕانێ:**\nتەنێ پەیڤ یان رستەکێ ب بادینی بۆ من فرێبکه، ئەز دێ دەملدەست بۆ تە وەرگێڕمە سەر عەرەبی و ئینگلیزی.")
+    await update.message.reply_text("🔄 **خزمەتگۆزاریا وەرگێڕانێ:**\nتەنێ پەیڤ یان رستەکێ بنڤێسه، ئەز دێ بۆ تە وەرگێڕمە سەر عەرەبی و ئینگلیزی.")
 
-# --- ٣. مێشکێ وەرگێڕانێ (Handling Translation - Fixed) ---
+# --- ٣. مێشکێ وەرگێڕانێ ---
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    
-    # نیشاندانا نامەیا چاڤەڕێبوونێ
     waiting_msg = await update.message.reply_text("⏳ ل هیڤیێ بە، دهێتە وەرگێڕان...")
 
     try:
-        # ل ڤێرە مە source کرە 'ku' (Kurdish) دا کو گۆگڵ ب درستی ژ بادینی وەربگریت
+        # وەرگێڕان ب بەکارهێنانی 'ku' بۆ کوردی
         translated_ar = GoogleTranslator(source='ku', target='ar').translate(user_text)
         translated_en = GoogleTranslator(source='ku', target='en').translate(user_text)
 
@@ -75,7 +86,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     except Exception as e:
         logging.error(f"Translation Error: {e}")
-        await waiting_msg.edit_text("ببورە، کێشەیەک د وەرگێڕانێ دا چێبوو. دووبارە تاقی بکەوه.")
+        await waiting_msg.edit_text("ببورە، کێشەیەک د وەرگێڕانێ دا چێبوو.")
 
 # --- دەستپێکرنا بوتی ---
 
@@ -84,7 +95,8 @@ def main():
         print("Error: BOT_TOKEN is not set!")
         return
 
-    app = Application.builder().token(TOKEN).build()
+    # ل ڤێرە post_init هاتیە زێدەکرن بۆ رێکخستنا لیستا فرمانان
+    app = Application.builder().token(TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("currency", currency))
@@ -96,7 +108,7 @@ def main():
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Bot is running...")
+    print("Bot is running with Menu Commands...")
     app.run_polling()
 
 if __name__ == '__main__':
