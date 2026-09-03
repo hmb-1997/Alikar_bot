@@ -1,53 +1,70 @@
 import os
 import logging
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
 from deep_translator import GoogleTranslator
 
-# وەرگرتنا تۆکنی ژ ڕێلوەی
+# وەرگرتنا تۆکنان ژ Variables یێن Railway
 TOKEN = os.getenv('BOT_TOKEN')
+WEATHER_API_KEY = os.getenv('WEATHER_API_KEY')
+CURRENCY_API_KEY = os.getenv('CURRENCY_API_KEY')
 
 # رێکخستنا لۆگ
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# --- ١. فۆنکشنێن وەرگرتنا زانیاریێن زیندی (Live Data API) ---
+# --- ١. فۆنکشنێن وەرگرتنا زانیاریێن زیندی (Live Data) ---
 
-def get_live_prayer_times():
+def get_precise_prayer():
     try:
-        # وەرگرتنا دەمێن بانگی بۆ دهۆکێ ب شێوەیەکێ فەرمی
-        url = "http://api.aladhan.com/v1/timingsByCity?city=Duhok&country=Iraq&method=3"
+        # بەکارئینانا میتۆدێ ١٣ (Diyanet) کو بۆ دهۆکێ باشترینە
+        url = "http://api.aladhan.com/v1/timingsByCity?city=Duhok&country=Iraq&method=13"
         res = requests.get(url).json()
         t = res['data']['timings']
+        
+        # رێکخستنا دەمی: ئەگەر دەم خەلەت بوو، ل ڤێرە خولەکان کێم یان زێدە بکە
+        def format_t(t_str, offset=0):
+            dt = datetime.strptime(t_str, "%H:%M") + timedelta(minutes=offset)
+            return dt.strftime("%I:%M %p")
+
         return {
-            "سپێدە": t['Fajr'],
-            "نیڤڕۆ": t['Dhuhr'],
-            "ئێڤاری": t['Asr'],
-            "مەغرب": t['Maghrib'],
-            "عیشا": t['Isha']
+            "سپێدە": format_t(t['Fajr'], 0),
+            "ڕۆژهەلاتن": format_t(t['Sunrise'], 0),
+            "نیڤڕۆ": format_t(t['Dhuhr'], 0),
+            "ئێڤاری": format_t(t['Asr'], 0),
+            "مەغرب": format_t(t['Maghrib'], 2), # زێدەکرنا ٢ خولەکان بۆ مەغربێ دهۆکێ
+            "عیشا": format_t(t['Isha'], 2)
         }
     except:
         return None
 
-def get_live_weather(city):
+def get_precise_weather():
+    if not WEATHER_API_KEY: return "توکن نینە"
     try:
-        # وەرگرتنا پلەیا گەرمێ و بارودۆخی
-        url = f"https://wttr.in/{city}?format=%t+%C"
-        response = requests.get(url)
-        return response.text.strip() if response.status_code == 200 else "N/A"
+        # وەرگرتنا کەشوهەوای ب رێکا توکنا تە ژ OpenWeatherMap
+        url = f"http://api.openweathermap.org/data/2.5/weather?q=Duhok&appid={WEATHER_API_KEY}&units=metric"
+        data = requests.get(url).json()
+        temp = data['main']['temp']
+        desc = data['weather'][0]['main']
+        return f"{int(temp)}°C - {desc}"
     except:
-        return "کێشه هەیە"
+        return "کێشەک هەبوو"
 
-def get_live_currency():
+def get_precise_currency():
+    if not CURRENCY_API_KEY: return None
     try:
-        # وەرگرتنا بهایێ دراڤی یێ جیهانی بەرامبەر دۆلاری
-        res = requests.get("https://api.exchangerate-api.com/v4/latest/USD").json()
-        data = res['rates']
+        # وەرگرتنا بهایێ دراڤی ب رێکا توکنا تە ژ ExchangeRate-API
+        url = f"https://v6.exchangerate-api.com/v6/{CURRENCY_API_KEY}/latest/USD"
+        res = requests.get(url).json()
+        rates = res['conversion_rates']
+        
+        # بهایێ تەخمینی یێ دۆلاری ل بازارێ دهۆکێ
+        usd_iqd = 150750 
         return {
-            "TRY": data['TRY'],
-            "IRR": data['IRR'],
-            "IQD": data['IQD']
+            "TRY": rates['TRY'],
+            "IRR": rates['IRR'],
+            "IQD": usd_iqd
         }
     except:
         return None
@@ -58,8 +75,8 @@ async def post_init(application: Application):
     commands = [
         BotCommand("start", "دەسپێکرنا بوتی"),
         BotCommand("currency", "بهایێ دراڤی (زیندی)"),
-        BotCommand("prayer", "دەمێن بانگی (ئەڤرۆ)"),
-        BotCommand("weather", "کەشوهەوا (نوکە)"),
+        BotCommand("prayer", "دەمێن بانگی (ورد)"),
+        BotCommand("weather", "کەشوهەوا (ورد)"),
         BotCommand("education", "قوتابی و مەلازێم"),
         BotCommand("adhkar", "زیکر و ئایین"),
         BotCommand("translate", "وەرگێڕان")
@@ -69,108 +86,71 @@ async def post_init(application: Application):
 # --- ٣. فۆنکشنێن بەرسڤدانێ ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        f"سلاڤ {update.effective_user.first_name} 👋\n"
-        "بخێر هاتی بۆ بوتێ **ئالیکارێ بادینان**.\n\n"
-        "ئەڤ بوتە هەر رۆژ زانیاریێن نوو و ڕاستەقینە ب ئۆتۆماتیک ژ ئینتەرنێتێ وەردگریت. 🚀"
-    )
+    await update.message.reply_text(f"سلاڤ {update.effective_user.first_name} 👋\nبخێر هاتی بۆ ئالیکارێ بادینان. نوکە بوتێ تە یێ گرێدایی API یێن فەرمی یە.")
 
 async def currency(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    waiting = await update.message.reply_text("⏳ دهێتە نووکرن...")
-    rates = get_live_currency()
-    if rates:
-        # بهایێ دیناری ل بازارێ مە تەقریبەن ۱۰-۱۵ خالان ژ یێ فەرمی بلندترە
-        market_usd_iqd = 150500 
+    wait = await update.message.reply_text("⏳ دهێتە نووکرن...")
+    data = get_precise_currency()
+    if data:
         msg = (
-            "💰 **بهایێ دراڤی یێ زیندی (ئەڤرۆ):**\n\n"
-            f"💵 100 دۆلار ⮕ ~{market_usd_iqd:,} دینار\n"
-            f"🇹🇷 100 دۆلار ⮕ {int(rates['TRY'] * 100)} لێرا تورکی\n"
-            f"🇮🇷 100 دۆلار ⮕ {int(rates['IRR'] * 100 / 1000000)} ملیۆن تمەن\n\n"
-            "⚠️ *تێبینی: بهایێ دۆلاری یێ بازارێ دهۆکێ یە.*"
+            "💰 **بهایێ دراڤی ل بازارێ دهۆکێ:**\n\n"
+            f"💵 100 دۆلار ⮕ ~{data['IQD']:,} دینار\n"
+            f"🇹🇷 100 دۆلار ⮕ {int(data['TRY'] * 100)} لێرە\n"
+            f"🇮🇷 100 دۆلار ⮕ {int(data['IRR'] * 100 / 1000000)} ملیۆن تمەن"
         )
-    else:
-        msg = "ببورە، کێشەیەک د وەرگرتنا بهایی دا هەبوو."
-    await waiting.edit_text(msg, parse_mode='Markdown')
+    else: msg = "کێشەک د توکنی دا هەبوو."
+    await wait.edit_text(msg, parse_mode='Markdown')
 
 async def weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    waiting = await update.message.reply_text("🌤 ل هیڤیێ بە...")
-    d = get_live_weather("Duhok")
-    z = get_live_weather("Zakho")
-    a = get_live_weather("Amedi")
-    msg = (
-        "🌤 **کەشوهەوا ل بادینان (نوکە):**\n\n"
-        f"📍 دهۆک: {d}\n"
-        f"📍 زاخۆ: {z}\n"
-        f"📍 ئامێدی: {a}\n\n"
-        "هەمی دەمان کەیف خۆش بن!"
-    )
-    await waiting.edit_text(msg, parse_mode='Markdown')
+    wait = await update.message.reply_text("🌤 ل هیڤیێ بە...")
+    w = get_precise_weather()
+    await wait.edit_text(f"🌤 **کەشوهەوا ل دهۆکێ (نوکە):**\n`{w}`", parse_mode='Markdown')
 
 async def prayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    waiting = await update.message.reply_text("🕌 ل هیڤیێ بە...")
-    p = get_live_prayer_times()
+    wait = await update.message.reply_text("🕌 ل هیڤیێ بە...")
+    p = get_precise_prayer()
     if p:
-        date_today = datetime.now().strftime("%d/%m/%Y")
         msg = (
-            f"🕌 **دەمێن بانگی ل دهۆکێ ({date_today}):**\n\n"
-            f"🌅 سپێدە: {p['سپێدە']}\n"
-            f"☀️ نیڤڕۆ: {p['نیڤڕۆ']}\n"
-            f"🌆 ئێڤاری: {p['ئێڤاری']}\n"
-            f"🌙 مەغرب: {p['مەغرب']}\n"
-            f"🌌 عیشا: {p['عیشا']}\n\n"
-            "تێبینی: ئەڤ دەمه ب شێوەیەکێ ئۆتۆماتیک دهێتە نووکرن."
+            f"🕌 **دەمێن بانگی ل دهۆکێ ({datetime.now().strftime('%d/%m')}):**\n\n"
+            f"🌅 سپێدە: `{p['سپێدە']}`\n"
+            f"☀️ ڕۆژهەلاتن: `{p['ڕۆژهەلاتن']}`\n"
+            f"🕛 نیڤڕۆ: `{p['نیڤڕۆ']}`\n"
+            f"🕒 ئێڤاری: `{p['ئێڤاری']}`\n"
+            f"🌇 مەغرب: `{p['مەغرب']}`\n"
+            f"🌃 عیشا: `{p['عیشا']}`"
         )
-    else:
-        msg = "ببورە، کێشەک د وەرگرتنا دەمێن بانگی دا هەبوو."
-    await waiting.edit_text(msg, parse_mode='Markdown')
-
-async def education(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("📝 ئەنجامێن پۆلا ١٢", url="https://www.azmoonakan.org")]]
-    await update.message.reply_text("🎓 **پشکا قوتابیان:**", reply_markup=InlineKeyboardMarkup(keyboard))
+    else: msg = "کێشەک د سێرڤەری دا هەبوو."
+    await wait.edit_text(msg, parse_mode='Markdown')
 
 async def adhkar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("☀️ زیکرێن سپێدێ", callback_data='morning')],
-        [InlineKeyboardButton("🌙 زیکرێن ئێڤاری", callback_data='evening')]
-    ]
-    await update.message.reply_text("📖 **زیکر و ئایین:**", reply_markup=InlineKeyboardMarkup(keyboard))
-
-# --- ٤. مێشکێ وەرگێڕانێ و دوگمەیان ---
+    keyboard = [[InlineKeyboardButton("☀️ سپێدێ", callback_data='morning'), InlineKeyboardButton("🌙 ئێڤاری", callback_data='evening')]]
+    await update.message.reply_text("📖 زیکرەکێ هەلبژێره:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     if user_text.startswith('/'): return
-    
     try:
         ar = GoogleTranslator(source='ku', target='ar').translate(user_text)
         en = GoogleTranslator(source='ku', target='en').translate(user_text)
         await update.message.reply_text(f"✅ **وەرگێڕان:**\n\n🇸🇦: `{ar}`\n🇺🇸: `{en}`", parse_mode='Markdown')
-    except:
-        pass
+    except: pass
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if query.data == 'morning':
-        await query.message.reply_text("☀️ زیکرێ سپێدێ: (أصبحنا وأصبح الملك لله)")
-    elif query.data == 'evening':
-        await query.message.reply_text("🌙 زیکرێ ئێڤاری: (أمسینا وأمسی الملك لله)")
-
-# --- ٥. دەستپێکرنا سەرەکی ---
+    if query.data == 'morning': await query.message.reply_text("☀️ زیکرێ سپێدێ: (أصبحنا وأصبح الملك لله)")
+    if query.data == 'evening': await query.message.reply_text("🌙 زیکرێ ئێڤاری: (أمسینا وأمسی الملك لله)")
 
 def main():
     if not TOKEN: return
     app = Application.builder().token(TOKEN).post_init(post_init).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("currency", currency))
     app.add_handler(CommandHandler("weather", weather))
     app.add_handler(CommandHandler("prayer", prayer))
-    app.add_handler(CommandHandler("education", education))
     app.add_handler(CommandHandler("adhkar", adhkar))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
     app.run_polling()
 
 if __name__ == '__main__':
