@@ -13,7 +13,7 @@ CURRENCY_API_KEY = os.getenv('CURRENCY_API_KEY')
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# --- ١. زانیاریێن زیندی (بانگ، کەشوهەوا، دراڤ) ---
+# --- ١. فۆنکشنێن زانیاریێن زیندی ---
 
 def get_precise_prayer():
     try:
@@ -37,11 +37,12 @@ def get_precise_weather():
     if not WEATHER_API_KEY: return "توکن نینە"
     try:
         url = f"https://api.openweathermap.org/data/2.5/weather?q=Duhok,IQ&appid={WEATHER_API_KEY}&units=metric"
-        res = requests.get(url).json()
-        if response := requests.get(url):
-            data = response.json()
+        response = requests.get(url)
+        data = response.json()
+        if response.status_code == 200:
             return f"{int(data['main']['temp'])}°C - {data['weather'][0]['main']}"
-    except: return "ل هیڤیا ئەکتیڤبوونا توکنێ بە"
+        return "ل هیڤیا ئەکتیڤبوونا توکنێ بە"
+    except: return "کێشەیەک هەبوو"
 
 def get_precise_currency():
     if not CURRENCY_API_KEY: return None
@@ -79,30 +80,25 @@ async def weather_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     w = get_precise_weather()
     await update.message.reply_text(f"🌤 **کەشوهەوا (دهۆک):**\n`{w}`", parse_mode='Markdown')
 
-# --- ٣. مێشکێ وەرگێڕانێ (بێبەرامبەر و ب هێز) ---
+async def translate_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🔄 **وەرگێڕان:**\nپێدڤی ب چ فرمانان نینە، تەنێ هەر تشتەکێ تە دڤێت بنڤێسه و بفرێکه، ئەز دێ دەملدەست وەرگێڕم.")
+
+# --- ٣. مێشکێ وەرگێڕانێ ---
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if text.startswith('/'): return
     
-    # نیشاندانا نامەیا (⏳...)
     waiting = await update.message.reply_text("⏳ دهێتە وەرگێڕان...")
-
     try:
-        # وەرگێڕان بۆ عەرەبی و ئینگلیزی ب رێکا گوگل (بێبەرامبەر)
-        # مە زمان کرە 'ku' دا کو بادینی ب درستی ناس کەت
         translated_ar = GoogleTranslator(source='ku', target='ar').translate(text)
         translated_en = GoogleTranslator(source='ku', target='en').translate(text)
-
-        result = (f"✅ **ئەنجامێ وەرگێڕانێ:**\n\n"
-                  f"🇸🇦 **عەرەبی:**\n`{translated_ar}`\n\n"
-                  f"🇺🇸 **ئینگلیزی:**\n`{translated_en}`")
-        
+        result = (f"✅ **ئەنجامێ وەرگێڕانێ:**\n\n🇸🇦 **عەرەبی:**\n`{translated_ar}`\n\n🇺🇸 **ئینگلیزی:**\n`{translated_en}`")
         await waiting.edit_text(result, parse_mode='Markdown')
-    except Exception as e:
+    except:
         await waiting.edit_text("ببوره، کێشەیەک د وەرگێڕانێ دا هەبوو.")
 
-# --- ٤. دوگمە و فرمانێن مینیو ---
+# --- ٤. دوگمە و رێکخستنا مینیو ---
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -111,12 +107,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == 'e': await query.message.reply_text("🌙 زیکرێ ئێڤاری: (أمسینا وأمسی الملك لله)")
 
 async def post_init(application: Application):
+    # ل ڤێرە فەرمانا translate زێدە بوو دا د مینیو دا دیار بیت
     await application.bot.set_my_commands([
         BotCommand("start", "دەسپێکرنا بوتی"),
         BotCommand("currency", "بهایێ دراڤی"),
         BotCommand("prayer", "دەمێن بانگی"),
         BotCommand("weather", "کەشوهەوا"),
-        BotCommand("adhkar", "زیکر و ئایین")
+        BotCommand("adhkar", "زیکر و ئایین"),
+        BotCommand("translate", "وەرگێڕان")
     ])
 
 def main():
@@ -127,6 +125,7 @@ def main():
     app.add_handler(CommandHandler("currency", currency))
     app.add_handler(CommandHandler("prayer", prayer))
     app.add_handler(CommandHandler("weather", weather_cmd))
+    app.add_handler(CommandHandler("translate", translate_help))
     app.add_handler(CommandHandler("adhkar", lambda u, c: u.message.reply_text("📖 زیکرەکێ هەلبژێره:", 
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("☀️ سپێدێ", callback_data='m'), InlineKeyboardButton("🌙 ئێڤاری", callback_data='e')]]))))
     
