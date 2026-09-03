@@ -14,13 +14,13 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = " ".join(context.args)
     if not prompt:
-        await update.message.reply_text("✨ **تکایە وەسفەکێ بنڤێسه.**\nنموونه: `/ai a realistic Kurdish man in traditional clothes, 4k high detail`", parse_mode='Markdown')
+        await update.message.reply_text("✨ **تکایە وەسفەکێ بنڤێسه.**\nنموونه: `/ai a realistic Kurdish warrior, 4k`", parse_mode='Markdown')
         return
 
     m = await update.message.reply_text("🚀 **ژیریا دەستکرد دەست ب کار بوو... کێمەکێ ل هیڤیێ بە.**")
 
     try:
-        # بەکارئینانا مۆدێلا FLUX کو نوکە ب هێزترین مۆدێلا جیهانییە
+        # بەکارئینانا مۆدێلا FLUX ب رێکا Pollinations
         encoded_prompt = urllib.parse.quote(prompt)
         image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&model=flux&nologo=true"
         
@@ -33,14 +33,12 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await m.delete()
     except Exception as e:
         logging.error(e)
-        await m.edit_text("ببورە، سێرڤەر نوکە یێ قەلەبالغە. دووبارە تاقی بکەوه.")
+        await m.edit_text("ببورە، کێشەیەک هەبوو. دووبارە تاقی بکەوه.")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 **سڵاڤ! ب خێر هاتی بۆ بوتێ فۆتۆشۆپا زیرەک (AI).**\n\n"
-        "🎨 ئەز دشێم هەر وێنەیەکێ د سەرێ تە دا بیت دروست بکەم.\n"
-        "تەنێ فەرمانا `/ai` بنڤێسه و وەسفەکێ ب ئینگلیزی بدە.\n\n"
-        "نموونه:\n`/ai a futuristic car in the streets of Duhok`",
+        "👋 **سڵاڤ! ب خێر هاتی بۆ بوتێ فۆتۆشۆپا زیرەک.**\n\n"
+        "🎨 فەرمانا `/ai` بنڤێسه و وەسفەکێ بدە دا وێنەی بۆ تە درست کەم.",
         parse_mode='Markdown'
     )
 
@@ -53,11 +51,9 @@ async def post_init(application: Application):
 def main():
     if not TOKEN: return
     app = Application.builder().token(TOKEN).post_init(post_init).build()
-    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ai", generate_image))
-    
-    print("AI Photoshop Bot is running...")
+    print("AI Bot is running...")
     app.run_polling()
 
 if __name__ == '__main__':
